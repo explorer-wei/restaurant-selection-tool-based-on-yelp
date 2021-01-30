@@ -1,0 +1,99 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Yelp Map</title>
+</head>
+
+<script src='http://d3js.org/d3.v2.js'></script>
+<style>
+
+.background {
+  fill: none;
+  pointer-events: all;
+}
+
+#states path {
+  fill: #aaa;
+  stroke: #fff;
+  stroke-width: 1.5px;
+}
+
+#states path:hover {
+  stroke: white;
+}
+
+</style>
+<body>
+<script>
+
+var width = 1200,
+    height = 600;
+
+var projection = d3.geo.albersUsa()
+    .scale(width)
+    .translate([width / 2, height / 2]);
+
+var path = d3.geo.path()
+    .projection(projection);
+
+var zoom = d3.behavior.zoom()
+    .translate(projection.translate())
+    .scale(projection.scale())
+    .scaleExtent([height, 8 * height])
+    .on("zoom", zoom);
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+var states = svg.append("g")
+    .attr("id", "states")
+    .call(zoom);
+
+states.append("rect")
+    .attr("class", "background")
+    .attr("width", width)
+    .attr("height", height);
+
+d3.json("us-states.json", function(json) {
+
+  feature = states.selectAll("path")
+                       .data(json.features)
+                     .enter().append("path")
+                       .attr("d", path)
+                       .attr("style", "fill:#90EE90;stroke:#00008B;stroke-width:2;opacity:0.5")
+                       .on("mouseover", mouseover)
+                       .on("mouseleave", mouseleave)
+                       .on("click", click);
+
+  feature.append("title")
+      .text(function(d) { return d.properties.name; })
+});
+
+function click(d) {
+  window.open(d.university.link);
+}
+
+function mouseover(d) {
+    var imagU = document.createElement("img");
+    imagU.setAttribute('src', "UniversityImage/"+d.university.imag);
+    imagU.setAttribute('id','imagU');
+    imagU.setAttribute('style', 'position: absolute; top: 10px; left: 1150px; z-index: 0;');
+    document.body.appendChild(imagU);
+}
+
+function mouseleave(d) {
+    document.body.removeChild(document.getElementById('imagU'));
+}
+
+function zoom() {
+  projection.translate(d3.event.translate).scale(d3.event.scale);
+  states.selectAll("path").attr("d", path);
+}
+
+</script>
+
+<body>
+</body> 

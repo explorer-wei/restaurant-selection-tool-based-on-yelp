@@ -1,0 +1,331 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Eating @ Virginia Tech</title>
+</head>
+
+<body>
+
+  <div id="map_canvas" style="width:50%; height:96%; float:left;"></div>
+
+  <div id="controller" style="width:50%; height:96%; text-align:left; float:right;">
+
+<table style="width:95%;" border="0">
+<tr>
+<td style="width:50%; text-align:center"> 
+    <fieldset>
+    <legend>Current position</legend>  
+      <div id="latlng"> [ 37.231029, -80.421694 ] </div>
+      <div id="address"> McBryde Hall, VirginiaTech, Blacksburg, VA 24060, USA </div>
+    </fieldset>
+</td>
+<td align="left"> 
+    <input type="range" id="DisSlider" style="width:60%;" value="0.5" min="0" max="1" step="0.01" onchange="printDis('DisSlider','DisValue')"/>
+    <input type="text" id="DisValue" value="0.5" size="2" disabled="disabled"/> miles 
+  <br> <br>
+    <input type="range" id="StarSlider" style="width:60%;" value="3.0" min="0" max="5" step="0.5" onchange="printStar('StarSlider','StarValue')"/>
+    <input type="text" id="StarValue" value="3.0" size="2" disabled="disabled"/> stars 
+</td>
+</tr>
+</table>  
+<div id="bubble" align="center"> </div>
+
+  </div>
+
+  <div id="footer"  style="background-color:#99bbbb; width:100%; height:4%; clear:both; text-align:center;">
+    Copyright by Wei Huang and Youngjib Ham @2012
+  </div>
+</div>
+
+
+    <link href="https://developers.google.com/maps/documentation/javascript/examples/default.css" rel="stylesheet">
+    <script src="https://maps.googleapis.com/maps/api/js?sensor=false&language=en"></script>
+    <script src="jquery.js"></script>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+
+    <script>
+
+        var myLatlng = new google.maps.LatLng(37.231029, -80.421694);
+        var geocoder = new google.maps.Geocoder();	
+        var map, HerePin, RestPin;
+        var dLat, dLon, a, c, ActualDis;
+        var DistanceCircle;
+        var distance = 804.672; //0.5mile
+        var HereTag = 'flag.png';
+        var R = 6378100; // Radius of the earth in m
+        var star = 3; //Rating
+
+        //restaurant: names, latitude, longitude, stars, full_address, business_id
+        var rests = new Array();
+        var templist = new Array();
+        var tempUser = new Array();
+        var tempReview = new Array();
+        var root = "";
+
+
+      //Read json data
+      $.getJSON('VTBusiness.json',function(data){
+        var html = '';
+        $.each(data,function(i,item){
+            rests[i] = new Array();
+            rests[i][0] = item.name;
+            rests[i][1] = item.latitude;
+            rests[i][2] = item.longitude;
+            rests[i][3] = item.stars;	
+            rests[i][4] = item.review_count;
+            rests[i][5] = item.business_id;
+            rests[i][6] = item.photo_url;
+            rests[i][7] = item.url;
+        });
+        DrawMap();
+      });
+      
+      //Set current location
+      function SetCenter(marker) {
+        google.maps.event.addListener(marker, 'drag', function() {
+            document.getElementById('latlng').innerHTML = '[ ' + marker.getPosition().toUrlValue() + ' ]';
+        });  
+        google.maps.event.addListener(marker, 'dragend', function() {
+            myLatlng = marker.getPosition();
+            geocoder.geocode({ latLng: marker.getPosition() }, function(responses) {
+              if (responses && responses.length > 0) {
+                document.getElementById('address').innerHTML = responses[0].formatted_address;
+              } else {
+                document.getElementById('address').innerHTML = 'Cannot determine address at this location';
+              }
+            });
+            DrawMap();
+        });
+      }
+
+
+      //Set save the restaurants list which meet current requirement
+      function GetTempRest() {
+            var j = 0;
+            templist = new Array();
+            tempReview = new Array();
+
+            for (var i = 0; i < rests.length; i++) {
+                 //Calculate great-circle distances between the two points
+                 var dLat = 0.01745328889*(myLatlng.lat()-rests[i][1]);
+                 var dLon = 0.01745328889*(myLatlng.lng()-rests[i][2]);
+                 var a = (Math.sin(dLat/2) * Math.sin(dLat/2)) + (Math.cos(0.01745328889*(rests[i][1]))) * (Math.cos(0.01745328889*(myLatlng.lat()))) * (Math.sin(dLon/2)) * (Math.sin(dLon/2));
+                 var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                 var ActualDis = R * c;
+	
+                 if(ActualDis <= distance && rests[i][3]>=star) {
+                     templist[j] = rests[i];
+                     j = j+1;
+                 }
+            }
+
+            var i = 0;
+            $.getJSON('VTReview.json', function(data) {
+               $.each(data,function(k,item) {
+                  for (var j = 0; j < templist.length; j++) {
+                        if(item.business_id == templist[j][5]) {
+                           tempReview[i] = new Array();
+                           tempReview[i][0] = item.user_id;
+                           tempReview[i][1] = item.business_id;
+                           tempReview[i][2] = item.stars;
+                           i = i+1;
+                        }   
+                  }             
+               });
+
+               searchReview();
+            });  
+     }
+
+
+      function DrawMap() {
+
+        var mapOptions = {
+          zoom: 15,
+          center: myLatlng,
+          mapTypeId: google.maps.MapTypeId.ROADMAP
+        }
+        map = new google.maps.Map(document.getElementById('map_canvas'), mapOptions);
+        HerePin = new google.maps.Marker({
+            position: myLatlng,
+            map: map,
+            icon: HereTag,
+            title: "I'm here.",
+            draggable: true
+        });
+        //Event Handler - Drag the current location marker
+        SetCenter(HerePin);
+     
+        GetTempRest();
+        //Use Loop to Draw Restaurants Position
+        for (var i = 0; i < templist.length; i++) {
+            var restLatLng = new google.maps.LatLng(templist[i][1], templist[i][2]);
+            RestPin = new google.maps.Marker({
+                    position: restLatLng,
+                    map: map,
+                    title: templist[i][0] + " ,  " + templist[i][3] + " stars"
+            });
+            //Event Handler - Click the restaurant marker
+            attachInfo(RestPin, map, i);
+        }
+
+        //Draw Circle
+        var DistanceOptions = {
+                strokeColor: '#FF0000',
+                strokeOpacity: 0.80,
+                strokeWeight: 2,
+                fillColor: '#FF0000',
+                fillOpacity: 0.10,
+                map: map,
+                center: myLatlng,
+                radius: distance //meter
+        };
+        DistanceCircle = new google.maps.Circle(DistanceOptions);        
+      }
+
+      //Event Handler - Click the restaurant marker
+      function attachInfo(marker, map, num) {  
+
+                //Creat DOM, use DIV tag
+                var info = '<table border="0"> <tr> <td> <img src=' + templist[num][6] + ' ></td>';
+                info = info + '<td align="left"><b><a href="' + templist[num][7] + '" target="_blank">' + templist[num][0] + '</a></b>';
+                info = info + '<br><br> Avg Rating: ' + templist[num][3] + ' stars <br>Review Count: ' + templist[num][4] + '</td> </tr> </table>'; 
+
+                var infowindow = new google.maps.InfoWindow({ 
+                    content: info
+                });
+                google.maps.event.addListener(marker, 'click', function() {
+                    infowindow.open(map ,marker);
+                }); 
+      }  
+
+      //Show Range Value/Circle
+      function printDis(sliderID, textDis) {
+            var x = document.getElementById(textDis);
+            var y = document.getElementById(sliderID);
+            x.value = y.value;
+            distance = y.value*1609.344;
+            DistanceCircle.setRadius(distance);
+            DrawMap();
+      }
+
+      //Show Rate Star
+      function printStar(sliderID, textDis) {
+            var x = document.getElementById(textDis);
+            var y = document.getElementById(sliderID);
+            x.value = y.value;
+            star = y.value;
+            DrawMap();
+      }
+
+      //Selective Review
+      function searchReview(){
+
+            tempUser = new Array();
+            var k = 1;
+            for (var m = 0; m < tempReview.length; m++) { 
+                  if(m==0) {
+                    tempUser[0] = new Array();
+                    tempUser[0][0] = tempReview[0][0];
+                    tempUser[0][1] = 1; //count
+                  }
+                  else {
+                         var userExist = 0; //User not existing
+                         for (var n = 0; n < k; n++) {
+                               if(tempReview[m][0] == tempUser[n][0]) {
+                                  tempUser[n][1] = tempUser[n][1] + 1;
+                                  userExist = 1;
+                               }
+                         }
+                         if(userExist == 0) {
+                            tempUser[k] = new Array();
+                            tempUser[k][0] = tempReview[m][0];
+                            tempUser[k][1] = 1; //count
+                            k = k+1;
+                         }                                                             
+                     }
+            }
+
+            $.getJSON('VTUserProfile.json', function(data) {
+               $.each(data,function(k,item) {
+                  for (var i = 0; i < tempUser.length; i++) {
+                        if(item.user_id == tempUser[i][0]) {
+                           tempUser[i][2] = item.name;
+                        }   
+                  }             
+               });
+
+            drawBubble();
+            });
+       }
+
+
+      //Draw Bubble Chart
+      function drawBubble(){
+
+            root = { "children": [ ] };
+            for (var i = 0; i < tempUser.length; i++) {
+	  var str =  " {\"name\": \"" + tempUser[i][2] + "\", \"size\": " + tempUser[i][1] + ", \"id\":\"" + tempUser[i][0] + "\"} ";
+	  var person = eval('(' + str + ')');
+	  root.children.push(person);
+            }
+
+            var w = 680,
+                  h = 500,
+                  format = d3.format(",d"),
+                  color = d3.scale.category20c();
+
+            var bubble = d3.layout.pack()
+                .sort(null)
+                .size([w, h])
+                .padding(3.0);
+
+            var svg = d3.select("#bubble").html("")
+                .append("svg")
+                .attr("width", w)
+                .attr("height", h)
+                .attr("class", "bubble");
+
+            var node = svg.selectAll(".node")
+                .data(bubble.nodes(classes(root))
+                .filter(function(d) { return !d.children; }))
+                .enter().append("g")
+                .attr("class", "node")
+                .attr("transform", function(d) { return "translate(" + d.x + "," + d.y + ")"; })
+                .on("click", clickBubble);
+
+            node.append("title")
+                .text(function(d) { return "Have been to " + format(d.value) + " out of " + templist.length + " selected restaurants"; });
+
+            node.append("circle")
+                .attr("r", function(d) { return d.r; })
+                .style("fill", function(d) { return color(d.value); });
+
+            node.append("text")
+                .attr("dy", ".3em")
+                .style("text-anchor", "middle")
+                .text(function(d) { return d.className.substring(0, d.r / 5); });
+
+            // Returns a flattened hierarchy containing all leaf nodes under the root.
+            function classes(root) {
+              var classes = [];
+
+            function recurse(name, node) {
+                if (node.children) node.children.forEach(function(child) { recurse(node.name, child); });
+                else classes.push({className: node.name, value: node.size, id: node.id});
+            }
+            recurse(null, root);
+            return {children: classes};
+            }
+      }
+
+      function clickBubble(d) {
+        window.open("http://www.yelp.com/user_details_reviews_self?userid=" + d.id + "&review_sort=rating&review_filter=location&location_filter_city=Blacksburg&location_filter_state=VA&review_filter=category&category_filter=restaurants");
+      }
+
+    </script>
+
+</body>
+</html>
